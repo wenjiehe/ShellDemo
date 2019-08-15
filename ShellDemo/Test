@@ -1,0 +1,134 @@
+#!/bin/bash
+
+# 当前脚本的文件名
+echo $0
+# 当前进程PID
+echo $$ 
+
+# 声明数组
+declare -a implement_source_file_array
+declare -a resource_array
+file_count=0
+resource_count=0
+
+function getAllFiles()
+{
+	dir=`ls $1`
+	cd $1
+	for i in $dir; do
+		itemPath="$1/${i}"
+		if [[ -d $i ]]; then
+			if [ "${i##*.}" == "xcassets" ]; then
+				resourcePath=$(pwd)/$i
+				resource_array[$resource_count]=${resourcePath}
+				((resource_count += 1))
+				# echo ${resource_count}
+			fi
+			getAllFiles $i
+		else 
+			if [ "${i##*.}" == "h" ] || [ "${i##*.}" == "m" ]; then
+				implement_source_file_array[$file_count]=${itemPath}
+				((file_count += 1))
+			fi
+		fi
+	done
+	cd ../
+}
+getAllFiles $(pwd)
+
+# 替换文件内容中相匹配的字符串
+function replaceContentString(){
+	sed -i "" "s/${1}/${2}/g" ${3}
+}
+
+# 替换类的前缀,并替换文件中与类名相同的字符串
+function replaceFileName(){
+	cd ../
+	echo $(pwd)
+	oldFileNamePrefix=$1
+	newFileNamePrefix=$2
+	for (( i = 0; i < $file_count; i++ )); do
+		# 进入工程目录下
+		cd `dirname $0`
+		filePath=${implement_source_file_array[${i}]}
+		# 获取文件后缀
+		fileSuffix=${filePath##*.}
+		if [ "${fileSuffix}" == "h" ] || [ "${fileSuffix}" == "m" ]; then
+			# 获取类名(包含后缀)
+			fileName=${filePath##*/}
+			# 获取类的前缀,比如HWJAlphaView,获取的是HWJ
+			filePrefix=${fileName:0:${#oldFileNamePrefix}}
+			# 对工程相同类前缀的文件进行重命名
+			if [ "${filePrefix}" == "${oldFileNamePrefix}" ]; then
+				# 获取类的目录路径
+				path=${filePath%/*}
+				path=$(pwd)/$path
+				if [[ -d $path ]]; then
+					cd $path
+					# 获取类名(去掉后缀)
+					className=${fileName%.*}
+					# 从左边第3个字符开始一直到结束
+					str=${fileName:${#oldFileNamePrefix}}
+					newFileName=${newFileNamePrefix}${str}
+					newClassName=${newFileName%.*}
+					# 替换文件中的className为newClassName
+					replaceContentString "${className}" "${newClassName}" "$(pwd)/$fileName"
+					mv $fileName $newFileName
+					cd ../
+				else
+					echo "没有这个目录存在"
+				fi
+			fi
+		fi
+	done
+	cd ../
+}
+
+# 传入需要替换的前缀
+# replaceFileName "HWJ" "Test" 
+# replaceFileName "Test" "HWJ" 
+
+# 图片路径存储数组
+declare -a imagePathArray
+img_ary_count=0
+
+findImage(){
+	cd $1
+	imageDir=`ls $1`
+	name=$2
+	for k in $imageDir; do
+		path="$1/${k}"
+		imageFileSuffix=${k##*.}
+		imageFilePrefix=${k%.*}
+		if [[ "${imageFileSuffix}" != "imageset" && "${imageFileSuffix}" != "json" && "${imageFileSuffix}" != "appiconset" ]]; then
+			findImage $(pwd)/$k $name
+		else
+			if [[ "${imageFileSuffix}" == "imageset" ]]; then
+				if [[ "${imageFilePrefix}" == "$name" ]]; then
+					imageArray[$img_ary_count]=${path}
+					((img_ary_count += 1))
+				fi
+			fi
+		fi
+	done
+	cd ../
+}
+
+function findResourceImage(){
+	cd ../
+	imageName=$1
+	for (( i = 0; i < $resource_count; i++ )); do
+		# 进入工程目录下
+		# cd `dirname $0`
+		xcassetsFile=${resource_array[${i}]}
+		# 递归查找图片路径
+		findImage $xcassetsFile $imageName
+	done
+	for i in $imageArray; do
+		echo "$i"
+	done
+}
+
+# 传入需要查找的图片名称，会打印图片全路径(图片名称含有空格会导致搜不到图片路径)
+findResourceImage "ScanFirstUse"
+
